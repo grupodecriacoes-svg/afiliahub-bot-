@@ -1,0 +1,575 @@
+"""
+AfiliaHub Discord Bot
+Comandos: /radar, /copy, /nicho, /meu-plano
+Post diário automático às 9h BRT (12h UTC)
+"""
+
+import os
+import asyncio
+import aiohttp
+import json
+import logging
+from datetime import datetime, time
+import pytz
+
+import discord
+from discord import app_commands
+from discord.ext import commands, tasks
+from anthropic import Anthropic
+
+# ─── Configuração de logging ───────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("bot.log", encoding="utf-8"),
+    ],
+)
+log = logging.getLogger("AfiliaHub")
+
+# ─── Constantes ────────────────────────────────────────────────────────────
+BRT = pytz.timezone("America/Sao_Paulo")
+DAILY_POST_TIME = time(hour=9, minute=0, tzinfo=BRT)
+
+PLANOS = {
+    "gratuito": {
+        "nome": "🆓 Gratuito",
+        "cor": 0x95A5A6,
+        "limite_comandos": 3,
+        "descricao": "Acesso básico à plataforma",
+    },
+    "starter": {
+        "nome": "⚡ Starter",
+        "cor": 0x3498DB,
+        "limite_comandos": 20,
+        "descricao": "Ideal para quem está começando",
+    },
+    "pro": {
+        "nome": "🚀 Pro",
+        "cor": 0x9B59B6,
+        "limite_comandos": 999,
+        "descricao": "Acesso completo + suporte prioritário",
+    },
+    "elite": {
+        "nome": "👑 Elite",
+        "cor": 0xF39C12,
+        "limite_comandos": 999,
+        "descricao": "Mentoria 1:1 + acesso vitalício",
+    },
+}
+
+# Mapeamento cargo Discord → plano
+CARGO_PLANO = {
+    "Elite": "elite",
+    "Pro": "pro",
+    "Starter": "starter",
+    "Membro": "gratuito",
+}
+
+
+# ─── Helpers de IA ─────────────────────────────────────────────────────────
+def get_claude_client() -> Anthropic:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY não configurada!")
+    return Anthropic(api_key=api_key)
+
+
+async def ask_claude(prompt: str, system: str = "", max_tokens: int = 1000) -> str:
+    """Chama a API da Claude de forma assíncrona via thread pool."""
+    loop = asyncio.get_event_loop()
+
+    def _call():
+        client = get_claude_client()
+        kwargs = {
+            "model": "claude-opus-4-5",
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if system:
+            kwargs["system"] = system
+        msg = client.messages.create(**kwargs)
+        return msg.content[0].text
+
+    return await loop.run_in_executor(None, _call)
+
+
+# ─── Bot setup ─────────────────────────────────────────────────────────────
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+def get_plano_usuario(member: discord.Member) -> str:
+    """Detecta o plano do usuário pelos cargos do Discord."""
+    role_names = [r.name for r in member.roles]
+    for cargo, plano in CARGO_PLANO.items():
+        if cargo in role_names:
+            return plano
+    return "gratuito"
+
+
+def embed_erro_plano(plano_atual: str, plano_necessario: str) -> discord.Embed:
+    embed = discord.Embed(
+        title="🔒 Recurso Bloqueado",
+        description=(
+            f"Este comando requer o plano **{PLANOS[plano_necessario]['nome']}** ou superior.\n\n"
+            f"Seu plano atual: **{PLANOS[plano_atual]['nome']}**\n\n"
+            "👉 [Fazer upgrade agora](https://afiliahub.com.br/planos)"
+        ),
+        color=0xE74C3C,
+    )
+    embed.set_footer(text="AfiliaHub • Plataforma de Afiliados")
+    return embed
+
+
+# ─── Comando /radar ─────────────────────────────────────────────────────────
+@bot.tree.command(
+    name="radar",
+    description="🎯 Descubra produtos em alta para promover agora mesmo",
+)
+@app_commands.describe(
+    nicho="Nicho de mercado (ex: emagrecimento, finanças, relacionamento)",
+    plataforma="Plataforma de afiliados (padrão: Hotmart)",
+)
+async def radar(
+    interaction: discord.Interaction,
+    nicho: str,
+    plataforma: str = "Hotmart",
+):
+    await interaction.response.defer(thinking=True)
+
+    plano = get_plano_usuario(interaction.user)
+
+    system = (
+        "Você é um especialista em marketing de afiliados no Brasil. "
+        "Analise tendências de mercado e indique produtos com alto potencial de conversão. "
+        "Seja direto, prático e use dados reais do mercado brasileiro. "
+        "Sempre inclua: comissão estimada, temperatura do nicho, e dica de ângulo de venda."
+    )
+
+    prompt = (
+        f"Faça uma análise de RADAR DE PRODUTOS para o nicho '{nicho}' na plataforma {plataforma}.\n\n"
+        "Inclua:\n"
+        "1. 🔥 Top 3 produtos em alta agora (com estimativa de comissão)\n"
+        "2. 📈 Tendência do nicho (subindo/estável/caindo) com justificativa\n"
+        "3. 🎯 Melhor ângulo de venda para iniciantes\n"
+        "4. ⚠️ Principais concorrências e como se diferenciar\n"
+        "5. 💡 Dica de ouro para converter mais\n\n"
+        "Formato: use emojis, seja conciso e acionável. Máximo 400 palavras."
+    )
+
+    try:
+        resposta = await ask_claude(prompt, system=system, max_tokens=800)
+
+        embed = discord.Embed(
+            title=f"🎯 Radar de Produtos — {nicho.title()}",
+            description=resposta,
+            color=0x2ECC71,
+            timestamp=datetime.now(BRT),
+        )
+        embed.add_field(name="📦 Plataforma", value=plataforma, inline=True)
+        embed.add_field(name="👤 Solicitado por", value=interaction.user.mention, inline=True)
+        embed.set_footer(
+            text="AfiliaHub Radar • Dados baseados em tendências de mercado",
+            icon_url="https://i.imgur.com/YOUR_LOGO.png",
+        )
+        await interaction.followup.send(embed=embed)
+        log.info(f"/radar | {interaction.user} | nicho={nicho}")
+
+    except Exception as e:
+        log.error(f"/radar erro: {e}")
+        await interaction.followup.send(
+            "❌ Erro ao consultar o Radar. Tente novamente em instantes.", ephemeral=True
+        )
+
+
+# ─── Comando /copy ──────────────────────────────────────────────────────────
+@bot.tree.command(
+    name="copy",
+    description="✍️ Gere copies prontas para vender como afiliado",
+)
+@app_commands.describe(
+    produto="Nome ou descrição do produto",
+    formato="Formato da copy (story, post, email, whatsapp, anuncio)",
+    publico="Público-alvo (ex: mulheres 30-45 anos, homens que querem emagrecer)",
+)
+@app_commands.choices(
+    formato=[
+        app_commands.Choice(name="📱 Story Instagram", value="story"),
+        app_commands.Choice(name="📝 Post Feed", value="post"),
+        app_commands.Choice(name="📧 E-mail", value="email"),
+        app_commands.Choice(name="💬 WhatsApp", value="whatsapp"),
+        app_commands.Choice(name="📢 Anúncio Pago", value="anuncio"),
+    ]
+)
+async def copy(
+    interaction: discord.Interaction,
+    produto: str,
+    formato: str,
+    publico: str = "público geral",
+):
+    await interaction.response.defer(thinking=True)
+
+    plano = get_plano_usuario(interaction.user)
+    if plano == "gratuito":
+        await interaction.followup.send(embed=embed_erro_plano("gratuito", "starter"), ephemeral=True)
+        return
+
+    formatos_map = {
+        "story": "Story do Instagram (15 segundos de leitura, CTA no final)",
+        "post": "Post do feed Instagram (caption engajante, até 200 palavras)",
+        "email": "E-mail marketing (assunto + corpo + CTA, tom pessoal)",
+        "whatsapp": "Mensagem de WhatsApp (informal, com senso de urgência)",
+        "anuncio": "Anúncio pago (headline + descrição + CTA, foco em conversão)",
+    }
+
+    system = (
+        "Você é um copywriter especialista em marketing de afiliados no Brasil. "
+        "Crie copies que convertem de verdade, usando gatilhos mentais, prova social e urgência. "
+        "Linguagem: natural, brasileira, sem ser vulgar. "
+        "Nunca use frases genéricas como 'produto incrível' sem especificidade."
+    )
+
+    prompt = (
+        f"Crie uma copy no formato: {formatos_map.get(formato, formato)}\n\n"
+        f"Produto: {produto}\n"
+        f"Público-alvo: {publico}\n\n"
+        "Requisitos:\n"
+        "• Use pelo menos 2 gatilhos mentais (urgência, escassez, autoridade, prova social)\n"
+        "• CTA claro e direto\n"
+        "• Linguagem natural e brasileira\n"
+        "• Se for story/post, inclua sugestão de imagem/vídeo\n"
+        "• Se for email, inclua linha de assunto\n\n"
+        "Entregue a copy pronta para usar, sem explicações adicionais."
+    )
+
+    try:
+        resposta = await ask_claude(prompt, system=system, max_tokens=700)
+
+        nomes_formato = {
+            "story": "📱 Story Instagram",
+            "post": "📝 Post Feed",
+            "email": "📧 E-mail",
+            "whatsapp": "💬 WhatsApp",
+            "anuncio": "📢 Anúncio Pago",
+        }
+
+        embed = discord.Embed(
+            title=f"✍️ Copy Gerada — {nomes_formato.get(formato, formato)}",
+            description=f"```\n{resposta[:3900]}\n```",
+            color=0x9B59B6,
+            timestamp=datetime.now(BRT),
+        )
+        embed.add_field(name="🛍️ Produto", value=produto[:50], inline=True)
+        embed.add_field(name="👥 Público", value=publico[:50], inline=True)
+        embed.set_footer(text="AfiliaHub Copy Generator • Clique em 📋 para copiar o texto")
+
+        await interaction.followup.send(embed=embed)
+        log.info(f"/copy | {interaction.user} | produto={produto} | formato={formato}")
+
+    except Exception as e:
+        log.error(f"/copy erro: {e}")
+        await interaction.followup.send("❌ Erro ao gerar copy. Tente novamente.", ephemeral=True)
+
+
+# ─── Comando /nicho ──────────────────────────────────────────────────────────
+@bot.tree.command(
+    name="nicho",
+    description="🔍 Analise um nicho de mercado em profundidade",
+)
+@app_commands.describe(
+    nicho="Nicho para analisar (ex: emagrecimento, finanças pessoais, ansiedade)",
+)
+async def nicho_cmd(
+    interaction: discord.Interaction,
+    nicho: str,
+):
+    await interaction.response.defer(thinking=True)
+
+    plano = get_plano_usuario(interaction.user)
+
+    system = (
+        "Você é um estrategista de marketing digital especializado no mercado brasileiro de afiliados. "
+        "Forneça análises profundas e acionáveis sobre nichos de mercado. "
+        "Use dados reais, tendências do Google Trends, e benchmarks do mercado BR."
+    )
+
+    # Acesso completo apenas para Starter+
+    if plano == "gratuito":
+        prompt = (
+            f"Faça uma análise BÁSICA do nicho '{nicho}' para afiliados iniciantes.\n"
+            "Inclua apenas: 1) Potencial do nicho (1-10) 2) Perfil do comprador 3) Uma dica de entrada.\n"
+            "Máximo 150 palavras. Mencione que a análise completa está disponível no plano Starter."
+        )
+    else:
+        prompt = (
+            f"Faça uma análise COMPLETA E PROFUNDA do nicho '{nicho}' para afiliados.\n\n"
+            "Estruture assim:\n"
+            "📊 **SCORE DO NICHO**: X/10 (com justificativa)\n"
+            "👥 **AVATAR DETALHADO**: Quem compra, dores, desejos, objeções\n"
+            "💰 **POTENCIAL FINANCEIRO**: Ticket médio, comissões esperadas, volume\n"
+            "🏆 **CONCORRÊNCIA**: Nível, principais players, gaps de mercado\n"
+            "📱 **MELHORES CANAIS**: Onde e como promover (Instagram, YouTube, etc.)\n"
+            "🎯 **ESTRATÉGIA DE ENTRADA**: Passo a passo para um iniciante\n"
+            "⚡ **PALAVRAS-CHAVE HOT**: 5 termos de busca com alto potencial\n"
+            "⚠️ **RISCOS E ALERTAS**: O que evitar neste nicho\n\n"
+            "Seja específico, use exemplos reais e seja direto. Máximo 500 palavras."
+        )
+
+    try:
+        resposta = await ask_claude(prompt, system=system, max_tokens=900)
+
+        cor = 0xE67E22 if plano == "gratuito" else 0xF39C12
+        titulo = f"🔍 Análise de Nicho — {nicho.title()}"
+        if plano == "gratuito":
+            titulo += " (Versão Básica)"
+
+        embed = discord.Embed(
+            title=titulo,
+            description=resposta,
+            color=cor,
+            timestamp=datetime.now(BRT),
+        )
+        embed.set_footer(text=f"AfiliaHub Nicho Analyzer • Plano {PLANOS[plano]['nome']}")
+        await interaction.followup.send(embed=embed)
+        log.info(f"/nicho | {interaction.user} | nicho={nicho} | plano={plano}")
+
+    except Exception as e:
+        log.error(f"/nicho erro: {e}")
+        await interaction.followup.send("❌ Erro na análise. Tente novamente.", ephemeral=True)
+
+
+# ─── Comando /meu-plano ──────────────────────────────────────────────────────
+@bot.tree.command(
+    name="meu-plano",
+    description="📋 Veja seu plano atual, benefícios e como fazer upgrade",
+)
+async def meu_plano(interaction: discord.Interaction):
+    await interaction.response.defer(thinking=True, ephemeral=True)
+
+    plano_key = get_plano_usuario(interaction.user)
+    plano = PLANOS[plano_key]
+
+    beneficios = {
+        "gratuito": [
+            "✅ Acesso ao canal #recursos-gratuitos",
+            "✅ 3 usos dos comandos IA por dia",
+            "✅ Comunidade e networking",
+            "❌ /copy (requer Starter+)",
+            "❌ Análise de nicho completa",
+            "❌ Suporte prioritário",
+        ],
+        "starter": [
+            "✅ Todos os benefícios Gratuito",
+            "✅ 20 usos dos comandos IA por dia",
+            "✅ /copy em todos os formatos",
+            "✅ Análise de nicho completa",
+            "✅ Acesso ao #sala-de-estratégia",
+            "❌ Mentoria em grupo (requer Pro)",
+        ],
+        "pro": [
+            "✅ Todos os benefícios Starter",
+            "✅ Usos ilimitados da IA",
+            "✅ Mentoria em grupo semanal",
+            "✅ Acesso ao #sala-vip-pro",
+            "✅ Suporte prioritário 24h",
+            "❌ Mentoria 1:1 (requer Elite)",
+        ],
+        "elite": [
+            "✅ TUDO desbloqueado",
+            "✅ Mentoria 1:1 mensal",
+            "✅ Acesso vitalício à plataforma",
+            "✅ Grupo exclusivo #sala-elite",
+            "✅ Co-criação de estratégias",
+            "✅ Acesso antecipado a novidades",
+        ],
+    }
+
+    proximos_planos = {
+        "gratuito": ("starter", "R$ 47/mês"),
+        "starter": ("pro", "R$ 97/mês"),
+        "pro": ("elite", "R$ 297/mês"),
+        "elite": None,
+    }
+
+    embed = discord.Embed(
+        title=f"📋 Seu Plano: {plano['nome']}",
+        description=plano["descricao"],
+        color=plano["cor"],
+        timestamp=datetime.now(BRT),
+    )
+
+    embed.add_field(
+        name="🎁 Seus Benefícios",
+        value="\n".join(beneficios[plano_key]),
+        inline=False,
+    )
+
+    proximo = proximos_planos.get(plano_key)
+    if proximo:
+        proximo_key, preco = proximo
+        proximo_plano = PLANOS[proximo_key]
+        embed.add_field(
+            name=f"⬆️ Próximo Nível: {proximo_plano['nome']}",
+            value=(
+                f"Por apenas **{preco}** você desbloqueia mais recursos!\n"
+                f"👉 [Fazer upgrade agora](https://afiliahub.com.br/planos)"
+            ),
+            inline=False,
+        )
+    else:
+        embed.add_field(
+            name="👑 Você está no topo!",
+            value="Aproveite todos os recursos exclusivos do Elite.",
+            inline=False,
+        )
+
+    member = interaction.guild.get_member(interaction.user.id)
+    dias_servidor = (datetime.now(BRT) - member.joined_at.astimezone(BRT)).days if member.joined_at else 0
+    embed.add_field(name="📅 Dias na comunidade", value=str(dias_servidor), inline=True)
+    embed.add_field(name="🏅 Cargos", value=", ".join(r.name for r in member.roles[1:]) or "Nenhum", inline=True)
+
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
+    embed.set_footer(text="AfiliaHub • Plataforma de Afiliados")
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
+    log.info(f"/meu-plano | {interaction.user} | plano={plano_key}")
+
+
+# ─── Post Diário às 9h ───────────────────────────────────────────────────────
+@tasks.loop(time=DAILY_POST_TIME)
+async def post_diario():
+    """Envia post motivacional/educativo diariamente às 9h BRT."""
+    canal_id = int(os.environ.get("CANAL_DIARIO_ID", "0"))
+    if not canal_id:
+        log.warning("CANAL_DIARIO_ID não configurado — post diário ignorado.")
+        return
+
+    canal = bot.get_channel(canal_id)
+    if not canal:
+        log.error(f"Canal {canal_id} não encontrado.")
+        return
+
+    hoje = datetime.now(BRT)
+    dia_semana = hoje.weekday()  # 0=seg ... 6=dom
+
+    temas = {
+        0: ("💡 Dica de Segunda", "tráfego orgânico para afiliados iniciantes"),
+        1: ("📊 Terça dos Dados", "métricas essenciais que todo afiliado deve acompanhar"),
+        2: ("🛠️ Quarta das Ferramentas", "ferramenta gratuita que aumenta conversões"),
+        3: ("🎯 Quinta da Estratégia", "estratégia de posicionamento para se diferenciar"),
+        4: ("💰 Sexta do Financeiro", "como organizar as finanças como afiliado"),
+        5: ("🚀 Sábado de Cases", "case de sucesso real de um afiliado brasileiro"),
+        6: ("🧠 Domingo Mindset", "mentalidade vencedora para afiliados"),
+    }
+
+    titulo_dia, tema = temas[dia_semana]
+    data_str = hoje.strftime("%d/%m/%Y")
+
+    system = (
+        "Você é o assistente oficial da AfiliaHub, plataforma para afiliados iniciantes no Brasil. "
+        "Crie conteúdo educativo, motivador e 100% prático. "
+        "Tom: amigável, entusiasmado mas profissional. "
+        "Inclua sempre uma ação concreta que o membro pode fazer HOJE."
+    )
+
+    prompt = (
+        f"Crie o post diário da AfiliaHub para {data_str} com o tema: '{tema}'.\n\n"
+        "Estrutura obrigatória:\n"
+        "1. Abertura impactante (1-2 linhas)\n"
+        "2. Conteúdo principal (3-4 parágrafos práticos)\n"
+        "3. Exemplo real ou dado concreto\n"
+        "4. MISSÃO DO DIA: uma ação específica para fazer hoje\n"
+        "5. Frase motivacional de encerramento\n\n"
+        "Use emojis estrategicamente. Máximo 350 palavras. "
+        "Mencione que podem usar /radar, /copy ou /nicho para aprofundar."
+    )
+
+    try:
+        conteudo = await ask_claude(prompt, system=system, max_tokens=700)
+
+        embed = discord.Embed(
+            title=f"{titulo_dia} — {data_str}",
+            description=conteudo,
+            color=0x2ECC71,
+            timestamp=hoje,
+        )
+        embed.set_author(name="AfiliaHub Daily", icon_url=canal.guild.icon.url if canal.guild.icon else None)
+        embed.set_footer(text="📌 Use /radar • /copy • /nicho para aprofundar • AfiliaHub")
+
+        await canal.send(
+            content="@everyone 🌅 **Bom dia, AfiliaHub!** Seu conteúdo diário chegou:",
+            embed=embed,
+        )
+        log.info(f"Post diário enviado | {data_str} | tema={tema}")
+
+    except Exception as e:
+        log.error(f"Erro no post diário: {e}")
+
+
+# ─── Eventos do bot ──────────────────────────────────────────────────────────
+@bot.event
+async def on_ready():
+    log.info(f"✅ Bot online como {bot.user} ({bot.user.id})")
+    try:
+        synced = await bot.tree.sync()
+        log.info(f"📡 {len(synced)} comandos slash sincronizados")
+    except Exception as e:
+        log.error(f"Erro ao sincronizar comandos: {e}")
+
+    post_diario.start()
+    log.info("⏰ Post diário agendado para 09:00 BRT")
+
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    """Boas-vindas para novos membros."""
+    canal_id = int(os.environ.get("CANAL_BOAS_VINDAS_ID", "0"))
+    if not canal_id:
+        return
+
+    canal = bot.get_channel(canal_id)
+    if not canal:
+        return
+
+    embed = discord.Embed(
+        title=f"🎉 Bem-vindo(a), {member.display_name}!",
+        description=(
+            f"Olá {member.mention}! Você acabou de entrar na **AfiliaHub** — "
+            "a comunidade para afiliados que querem resultados reais! 🚀\n\n"
+            "**Por onde começar:**\n"
+            "📌 Leia as regras em <#CANAL_REGRAS>\n"
+            "🎯 Apresente-se em <#CANAL_APRESENTACOES>\n"
+            "🤖 Use `/nicho`, `/radar` e `/copy` para começar a explorar\n"
+            "📋 Veja seu plano com `/meu-plano`\n\n"
+            "Qualquer dúvida, use `/ajuda` ou chame a equipe! 💪"
+        ),
+        color=0x2ECC71,
+    )
+    embed.set_thumbnail(url=member.display_avatar.url)
+    embed.set_footer(text=f"Membro #{member.guild.member_count} da AfiliaHub")
+
+    await canal.send(embed=embed)
+
+    # Atribui cargo "Membro" automaticamente
+    cargo_membro = discord.utils.get(member.guild.roles, name="Membro")
+    if cargo_membro:
+        await member.add_roles(cargo_membro)
+        log.info(f"Cargo Membro atribuído a {member}")
+
+
+@bot.event
+async def on_command_error(ctx, error):
+    log.error(f"Erro no comando: {error}")
+
+
+# ─── Entry point ─────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    token = os.environ.get("DISCORD_TOKEN")
+    if not token:
+        raise RuntimeError("DISCORD_TOKEN não configurado!")
+    bot.run(token)
