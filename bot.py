@@ -1,6 +1,6 @@
 """
 AfiliaHub Discord Bot
-Comandos: /radar, /copy, /nicho, /meu-plano
+Comandos: /radar, /copy, /nicho, /meu-plano, /prompt
 Post diário automático às 9h BRT (12h UTC)
 """
 
@@ -9,6 +9,7 @@ import asyncio
 import aiohttp
 import json
 import logging
+import random
 from datetime import datetime, time
 import pytz
 
@@ -16,6 +17,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 from anthropic import Anthropic
+from biblioteca_prompts import (
+    TUTORIAL_COMO_USAR,
+    PROMPTS_EXEMPLOS,
+    CATEGORIAS_INFO,
+)
 
 # ─── Configuração de logging ───────────────────────────────────────────────
 logging.basicConfig(
@@ -440,6 +446,103 @@ async def meu_plano(interaction: discord.Interaction):
     log.info(f"/meu-plano | {interaction.user} | plano={plano_key}")
 
 
+# ─── Comando /prompt ────────────────────────────────────────────────────────
+@bot.tree.command(
+    name="prompt",
+    description="🎨 Busque prompts de imagem IA por categoria",
+)
+@app_commands.describe(
+    categoria="Categoria de prompts para buscar",
+)
+@app_commands.choices(
+    categoria=[
+        app_commands.Choice(name="🚗 Carros & Motos (106)", value="carros"),
+        app_commands.Choice(name="💪 Academia & Esporte (40)", value="academia"),
+        app_commands.Choice(name="🌊 Natureza & Paisagem (41)", value="natureza"),
+        app_commands.Choice(name="💎 Lifestyle & Luxo (24)", value="luxo"),
+        app_commands.Choice(name="✈️ Dubai & Viagem (8)", value="dubai"),
+        app_commands.Choice(name="🎉 Festas & Datas (19)", value="festas"),
+        app_commands.Choice(name="🙏 Fé & Espiritualidade (4)", value="fe"),
+        app_commands.Choice(name="🌟 Variados (386)", value="variados"),
+    ]
+)
+async def prompt_cmd(
+    interaction: discord.Interaction,
+    categoria: str,
+):
+    await interaction.response.defer(thinking=True)
+
+    info = CATEGORIAS_INFO.get(categoria)
+    if not info:
+        await interaction.followup.send("❌ Categoria não encontrada.", ephemeral=True)
+        return
+
+    emoji, nome_cat, total = info
+    exemplos = PROMPTS_EXEMPLOS.get(categoria, [])
+
+    embed = discord.Embed(
+        title=f"{emoji} Prompts — {nome_cat}",
+        description=(
+            f"Nossa biblioteca tem **{total} prompts** nesta categoria!\n\n"
+            f"📂 Acesse o canal **#{emoji.lower()}│prompts-{categoria}** para ver todos.\n\n"
+            f"Aqui está um exemplo do acervo:"
+        ),
+        color=0x9B59B6,
+        timestamp=datetime.now(BRT),
+    )
+
+    if exemplos:
+        exemplo = random.choice(exemplos)
+        embed.add_field(
+            name=f"📝 {exemplo['nome']}",
+            value=f"```{exemplo['prompt'][:800]}```",
+            inline=False,
+        )
+        embed.add_field(
+            name="🤖 IA recomendada",
+            value=exemplo["ia"],
+            inline=True,
+        )
+    else:
+        embed.add_field(
+            name="📂 Como acessar",
+            value=f"Vá até o canal da categoria no Discord para ver todos os {total} prompts disponíveis!",
+            inline=False,
+        )
+
+    embed.add_field(
+        name="💡 Como usar",
+        value="Copie o prompt → cole no Gemini, ChatGPT ou Leonardo.ai → gere sua imagem!",
+        inline=False,
+    )
+    embed.set_footer(text="AfiliaHub Biblioteca • +633 prompts disponíveis")
+
+    await interaction.followup.send(embed=embed)
+    log.info(f"/prompt | {interaction.user} | categoria={categoria}")
+
+
+async def postar_tutorial_biblioteca():
+    """Posta o tutorial no canal #como-usar-prompts (execute uma vez manualmente)."""
+    canal_id = int(os.environ.get("CANAL_TUTORIAL_ID", "0"))
+    if not canal_id:
+        log.warning("CANAL_TUTORIAL_ID não configurado — tutorial não postado.")
+        return
+
+    canal = bot.get_channel(canal_id)
+    if not canal:
+        return
+
+    # Verifica se já existe mensagem fixada
+    pins = await canal.pins()
+    if pins:
+        log.info("Tutorial já postado e fixado.")
+        return
+
+    msg = await canal.send(TUTORIAL_COMO_USAR)
+    await msg.pin()
+    log.info("✅ Tutorial postado e fixado em #como-usar-prompts")
+
+
 # ─── Post Diário às 9h ───────────────────────────────────────────────────────
 @tasks.loop(time=DAILY_POST_TIME)
 async def post_diario():
@@ -523,6 +626,10 @@ async def on_ready():
 
     post_diario.start()
     log.info("⏰ Post diário agendado para 09:00 BRT")
+
+    # Posta tutorial na biblioteca se ainda não foi feito
+    await asyncio.sleep(5)
+    await postar_tutorial_biblioteca()
 
 
 @bot.event
