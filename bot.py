@@ -543,6 +543,161 @@ async def postar_tutorial_biblioteca():
     log.info("✅ Tutorial postado e fixado em #como-usar-prompts")
 
 
+# ─── Comando /postar ─────────────────────────────────────────────────────────
+@bot.tree.command(
+    name="postar",
+    description="📢 [ADMIN] Posta uma mensagem como AfiliaHub em qualquer canal",
+)
+@app_commands.describe(
+    canal="Canal onde a mensagem será postada",
+    mensagem="Texto da mensagem (use \\n para quebrar linha)",
+    titulo="Título do embed (opcional)",
+    fixar="Fixar a mensagem no canal?",
+)
+@app_commands.choices(
+    fixar=[
+        app_commands.Choice(name="Sim — fixar a mensagem", value="sim"),
+        app_commands.Choice(name="Não", value="nao"),
+    ]
+)
+async def postar(
+    interaction: discord.Interaction,
+    canal: discord.TextChannel,
+    mensagem: str,
+    titulo: str = "",
+    fixar: str = "nao",
+):
+    # Apenas admins e moderadores podem usar
+    cargos_permitidos = ["⚙️ Admin", "🛡️ Moderador"]
+    nomes_cargos = [r.name for r in interaction.user.roles]
+    if not any(c in nomes_cargos for c in cargos_permitidos):
+        await interaction.response.send_message(
+            "❌ Apenas **Admins** e **Moderadores** podem usar este comando.",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    # Substitui \n por quebra de linha real
+    mensagem_formatada = mensagem.replace("\\n", "\n")
+
+    try:
+        if titulo:
+            embed = discord.Embed(
+                title=titulo,
+                description=mensagem_formatada,
+                color=0xF39C12,
+                timestamp=datetime.now(BRT),
+            )
+            embed.set_footer(text="AfiliaHub")
+            msg = await canal.send(embed=embed)
+        else:
+            msg = await canal.send(mensagem_formatada)
+
+        if fixar == "sim":
+            await msg.pin()
+            await interaction.followup.send(
+                f"✅ Mensagem postada e fixada em {canal.mention}!", ephemeral=True
+            )
+        else:
+            await interaction.followup.send(
+                f"✅ Mensagem postada em {canal.mention}!", ephemeral=True
+            )
+
+        log.info(f"/postar | {interaction.user} | canal={canal.name} | fixar={fixar}")
+
+    except discord.Forbidden:
+        await interaction.followup.send(
+            f"❌ Sem permissão para postar em {canal.mention}.", ephemeral=True
+        )
+    except Exception as e:
+        log.error(f"/postar erro: {e}")
+        await interaction.followup.send("❌ Erro ao postar. Tente novamente.", ephemeral=True)
+
+
+# ─── Comando /postar-embed ────────────────────────────────────────────────────
+@bot.tree.command(
+    name="anuncio",
+    description="📣 [ADMIN] Posta um anúncio oficial estilizado como AfiliaHub",
+)
+@app_commands.describe(
+    canal="Canal do anúncio",
+    titulo="Título do anúncio",
+    mensagem="Corpo do anúncio (use \\n para quebrar linha)",
+    cor="Cor do embed (laranja, azul, verde, roxo, vermelho)",
+    mencionar="Mencionar @everyone?",
+)
+@app_commands.choices(
+    cor=[
+        app_commands.Choice(name="🟠 Laranja (padrão)", value="laranja"),
+        app_commands.Choice(name="🔵 Azul", value="azul"),
+        app_commands.Choice(name="🟢 Verde", value="verde"),
+        app_commands.Choice(name="🟣 Roxo", value="roxo"),
+        app_commands.Choice(name="🔴 Vermelho", value="vermelho"),
+        app_commands.Choice(name="⭐ Dourado", value="dourado"),
+    ],
+    mencionar=[
+        app_commands.Choice(name="Sim — @everyone", value="sim"),
+        app_commands.Choice(name="Não", value="nao"),
+    ]
+)
+async def anuncio(
+    interaction: discord.Interaction,
+    canal: discord.TextChannel,
+    titulo: str,
+    mensagem: str,
+    cor: str = "laranja",
+    mencionar: str = "nao",
+):
+    cargos_permitidos = ["⚙️ Admin", "🛡️ Moderador"]
+    nomes_cargos = [r.name for r in interaction.user.roles]
+    if not any(c in nomes_cargos for c in cargos_permitidos):
+        await interaction.response.send_message(
+            "❌ Apenas **Admins** e **Moderadores** podem usar este comando.",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    cores_map = {
+        "laranja": 0xF39C12,
+        "azul": 0x3498DB,
+        "verde": 0x2ECC71,
+        "roxo": 0x9B59B6,
+        "vermelho": 0xE74C3C,
+        "dourado": 0xF1C40F,
+    }
+
+    mensagem_formatada = mensagem.replace("\\n", "\n")
+
+    embed = discord.Embed(
+        title=f"📣 {titulo}",
+        description=mensagem_formatada,
+        color=cores_map.get(cor, 0xF39C12),
+        timestamp=datetime.now(BRT),
+    )
+    embed.set_author(
+        name="AfiliaHub — Comunicado Oficial",
+        icon_url=interaction.guild.icon.url if interaction.guild.icon else None,
+    )
+    embed.set_footer(text="AfiliaHub • Plataforma de Afiliados")
+
+    conteudo = "@everyone" if mencionar == "sim" else ""
+
+    try:
+        msg = await canal.send(content=conteudo, embed=embed)
+        await msg.pin()
+        await interaction.followup.send(
+            f"✅ Anúncio postado e fixado em {canal.mention}!", ephemeral=True
+        )
+        log.info(f"/anuncio | {interaction.user} | canal={canal.name} | titulo={titulo}")
+    except Exception as e:
+        log.error(f"/anuncio erro: {e}")
+        await interaction.followup.send("❌ Erro ao postar anúncio.", ephemeral=True)
+
+
 # ─── Post Diário às 9h ───────────────────────────────────────────────────────
 @tasks.loop(time=DAILY_POST_TIME)
 async def post_diario():
