@@ -20,6 +20,7 @@ from anthropic import Anthropic
 from biblioteca_prompts import (
     TUTORIAL_COMO_USAR,
     PROMPTS_EXEMPLOS,
+    PROMPTS_BANCO,
     CATEGORIAS_INFO,
 )
 
