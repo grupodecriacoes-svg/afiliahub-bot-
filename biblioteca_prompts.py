@@ -6,72 +6,31 @@ Cole este arquivo na pasta bot/ e importe no bot.py
 
 # ─── TUTORIAL FIXADO NO CANAL #como-usar-prompts ────────────────────────────
 
-TUTORIAL_COMO_USAR = """
-🎨 **BEM-VINDO À BIBLIOTECA DE PROMPTS DA AFILIAHUB!**
+TUTORIAL_COMO_USAR = """🎨 **BIBLIOTECA DE PROMPTS — +633 PROMPTS GRATUITOS!**
 
-Aqui você encontra **+633 prompts** prontos para gerar imagens incríveis com IA. Veja como usar:
+**📱 COMO USAR:**
+1️⃣ Escolha um prompt nos canais abaixo
+2️⃣ Copie o texto completo
+3️⃣ Cole em uma IA gratuita e gere sua imagem
+4️⃣ Compartilhe em #🖼️│resultados-da-comunidade
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-**📱 PASSO A PASSO**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**🤖 IAS GRATUITAS:**
+🟢 Google Gemini → gemini.google.com (recomendado!)
+🟡 ChatGPT → chatgpt.com → "Gerar imagem"
+🔵 Microsoft Copilot → copilot.microsoft.com
+🟣 Leonardo.ai → leonardo.ai
 
-**1️⃣ Escolha um prompt** nos canais abaixo
-**2️⃣ Copie o texto** do prompt completo
-**3️⃣ Cole em uma das IAs abaixo** e gere sua imagem
-**4️⃣ Compartilhe o resultado** em #🖼️│resultados-da-comunidade
+**📂 CATEGORIAS:**
+🚗 Carros & Motos (106) • 💪 Academia (40) • 🌊 Natureza (41)
+💎 Luxo (24) • ✈️ Dubai (8) • 🎉 Festas (19) • 🌟 Variados (386)
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-**🤖 IAS COMPATÍVEIS (GRATUITAS)**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🟢 **Google Gemini** (Recomendado)
-→ gemini.google.com → aba "Imagens"
-→ Melhor resultado com nossos prompts!
-
-🟡 **ChatGPT** (com DALL-E)
-→ chatgpt.com → "Gerar imagem"
-→ Cole o prompt e clique em enviar
-
-🔵 **Microsoft Copilot**
-→ copilot.microsoft.com
-→ Gratuito e com boa qualidade
-
-🟣 **Leonardo.ai**
-→ leonardo.ai → "Image Generation"
-→ Ideal para prompts detalhados
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-**💡 DICAS PRO**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-✅ Cole o prompt **completo** — não corte nada
-✅ Se não gostar do resultado, **gere novamente**
-✅ No Gemini, adicione "no Brasil" para localizar
-✅ Experimente adicionar seu nome no prompt
+**💡 DICAS:**
+✅ Cole o prompt completo — não corte nada
+✅ Adicione "no Brasil" no Gemini para localizar
 ✅ Use `/prompt [categoria]` para buscar por tema
+✅ Membros Pro pedem prompts personalizados em #🤖│pedir-prompt-personalizado
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-**📂 CATEGORIAS DISPONÍVEIS**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🚗 Carros & Motos → #🚗│prompts-carros-motos (106 prompts)
-💪 Academia & Esporte → #💪│prompts-academia-esporte (40 prompts)
-🌊 Natureza & Paisagem → #🌊│prompts-natureza-paisagem (41 prompts)
-💎 Lifestyle & Luxo → #💎│prompts-lifestyle-luxo (24 prompts)
-✈️ Dubai & Viagem → #✈️│prompts-dubai-viagem (8 prompts)
-🎉 Festas & Datas → #🎉│prompts-festas-datas (19 prompts)
-🙏 Fé & Espiritualidade → #🙏│prompts-fe-espiritualidade
-🌟 Variados → #🌟│prompts-variados (386 prompts)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-**🚀 QUER MAIS?**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Membros **Pro** podem pedir prompts personalizados em #🤖│pedir-prompt-personalizado
-→ Descreva o que quer e a IA gera na hora!
-
-👉 Use `/meu-plano` para ver como fazer upgrade
-"""
+👉 `/meu-plano` para ver como fazer upgrade 🚀"""
 
 # ─── BANCO DE PROMPTS POR CATEGORIA (EXEMPLOS DO ACERVO) ────────────────────
 
