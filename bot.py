@@ -773,9 +773,20 @@ async def post_diario():
 @bot.event
 async def on_ready():
     log.info(f"✅ Bot online como {bot.user} ({bot.user.id})")
+
+    guild_id = int(os.environ.get("GUILD_ID", "0"))
+
     try:
-        synced = await bot.tree.sync()
-        log.info(f"📡 {len(synced)} comandos slash sincronizados")
+        if guild_id:
+            # Sync rápido no servidor específico (instantâneo)
+            guild = discord.Object(id=guild_id)
+            bot.tree.copy_global_to(guild=guild)
+            synced = await bot.tree.sync(guild=guild)
+            log.info(f"📡 {len(synced)} comandos sincronizados no servidor (instantâneo)")
+        else:
+            # Sync global (demora até 1 hora)
+            synced = await bot.tree.sync()
+            log.info(f"📡 {len(synced)} comandos sincronizados globalmente")
     except Exception as e:
         log.error(f"Erro ao sincronizar comandos: {e}")
 
