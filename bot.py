@@ -449,11 +449,9 @@ async def meu_plano(interaction: discord.Interaction):
 # ─── Comando /prompt ────────────────────────────────────────────────────────
 @bot.tree.command(
     name="prompt",
-    description="🎨 Busque prompts de imagem IA por categoria",
+    description="🎨 Lista todos os prompts de uma categoria",
 )
-@app_commands.describe(
-    categoria="Categoria de prompts para buscar",
-)
+@app_commands.describe(categoria="Categoria de prompts para listar")
 @app_commands.choices(
     categoria=[
         app_commands.Choice(name="🚗 Carros & Motos (106)", value="carros"),
@@ -466,10 +464,7 @@ async def meu_plano(interaction: discord.Interaction):
         app_commands.Choice(name="🌟 Variados (386)", value="variados"),
     ]
 )
-async def prompt_cmd(
-    interaction: discord.Interaction,
-    categoria: str,
-):
+async def prompt_cmd(interaction: discord.Interaction, categoria: str):
     await interaction.response.defer(thinking=True)
 
     info = CATEGORIAS_INFO.get(categoria)
@@ -478,47 +473,94 @@ async def prompt_cmd(
         return
 
     emoji, nome_cat, total = info
-    exemplos = PROMPTS_EXEMPLOS.get(categoria, [])
+    prompts = PROMPTS_BANCO.get(categoria, [])
+
+    # Monta lista numerada com todos os prompts do banco
+    if prompts:
+        lista = "\n".join([f"`{i+1}.` {p['nome']}" for i, p in enumerate(prompts)])
+        rodape_lista = f"\n\n_Mostrando {len(prompts)} de {total} prompts disponíveis_"
+    else:
+        lista = "_Em breve mais prompts desta categoria!_"
+        rodape_lista = ""
 
     embed = discord.Embed(
-        title=f"{emoji} Prompts — {nome_cat}",
+        title=f"{emoji} {nome_cat} — Lista de Prompts",
         description=(
-            f"Nossa biblioteca tem **{total} prompts** nesta categoria!\n\n"
-            f"📂 Acesse o canal **#{emoji.lower()}│prompts-{categoria}** para ver todos.\n\n"
-            f"Aqui está um exemplo do acervo:"
+            f"**{total} prompts** nesta categoria!\n\n"
+            f"{lista}{rodape_lista}"
         ),
         color=0x9B59B6,
         timestamp=datetime.now(BRT),
     )
-
-    if exemplos:
-        exemplo = random.choice(exemplos)
-        embed.add_field(
-            name=f"📝 {exemplo['nome']}",
-            value=f"```{exemplo['prompt'][:800]}```",
-            inline=False,
-        )
-        embed.add_field(
-            name="🤖 IA recomendada",
-            value=exemplo["ia"],
-            inline=True,
-        )
-    else:
-        embed.add_field(
-            name="📂 Como acessar",
-            value=f"Vá até o canal da categoria no Discord para ver todos os {total} prompts disponíveis!",
-            inline=False,
-        )
-
     embed.add_field(
-        name="💡 Como usar",
-        value="Copie o prompt → cole no Gemini, ChatGPT ou Leonardo.ai → gere sua imagem!",
+        name="📥 Como ver o prompt completo",
+        value=f"Use `/prompt-ver {categoria} [número]`\nEx: `/prompt-ver {categoria} 1`",
         inline=False,
     )
     embed.set_footer(text="AfiliaHub Biblioteca • +633 prompts disponíveis")
 
     await interaction.followup.send(embed=embed)
     log.info(f"/prompt | {interaction.user} | categoria={categoria}")
+
+
+# ─── Comando /prompt-ver ─────────────────────────────────────────────────────
+@bot.tree.command(
+    name="prompt-ver",
+    description="📋 Veja o texto completo de um prompt pelo número",
+)
+@app_commands.describe(
+    categoria="Categoria do prompt",
+    numero="Número do prompt (use /prompt para ver a lista)",
+)
+@app_commands.choices(
+    categoria=[
+        app_commands.Choice(name="🚗 Carros & Motos", value="carros"),
+        app_commands.Choice(name="💪 Academia & Esporte", value="academia"),
+        app_commands.Choice(name="🌊 Natureza & Paisagem", value="natureza"),
+        app_commands.Choice(name="💎 Lifestyle & Luxo", value="luxo"),
+        app_commands.Choice(name="✈️ Dubai & Viagem", value="dubai"),
+        app_commands.Choice(name="🎉 Festas & Datas", value="festas"),
+        app_commands.Choice(name="🙏 Fé & Espiritualidade", value="fe"),
+        app_commands.Choice(name="🌟 Variados", value="variados"),
+    ]
+)
+async def prompt_ver(interaction: discord.Interaction, categoria: str, numero: int):
+    await interaction.response.defer(thinking=True)
+
+    prompts = PROMPTS_BANCO.get(categoria, [])
+    info = CATEGORIAS_INFO.get(categoria)
+
+    if not prompts or not info:
+        await interaction.followup.send("❌ Categoria não encontrada.", ephemeral=True)
+        return
+
+    if numero < 1 or numero > len(prompts):
+        await interaction.followup.send(
+            f"❌ Número inválido! Use entre 1 e {len(prompts)}. Use `/prompt {categoria}` para ver a lista.",
+            ephemeral=True,
+        )
+        return
+
+    emoji, nome_cat, _ = info
+    p = prompts[numero - 1]
+
+    embed = discord.Embed(
+        title=f"{emoji} {p['nome']}",
+        description=f"```\n{p['prompt']}\n```",
+        color=0x2ECC71,
+        timestamp=datetime.now(BRT),
+    )
+    embed.add_field(name="🤖 IA recomendada", value=p["ia"], inline=True)
+    embed.add_field(name="📂 Categoria", value=nome_cat, inline=True)
+    embed.add_field(
+        name="💡 Como usar",
+        value="Copie o texto acima → cole no Gemini, ChatGPT ou Leonardo.ai → gere!",
+        inline=False,
+    )
+    embed.set_footer(text=f"AfiliaHub • Prompt {numero}/{len(prompts)} de {nome_cat}")
+
+    await interaction.followup.send(embed=embed)
+    log.info(f"/prompt-ver | {interaction.user} | {categoria} #{numero}")
 
 
 async def postar_tutorial_biblioteca():
