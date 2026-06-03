@@ -46,32 +46,75 @@ PLANOS = {
         "limite_comandos": 3,
         "descricao": "Acesso básico à plataforma",
     },
-    "starter": {
-        "nome": "⚡ Starter",
-        "cor": 0x3498DB,
-        "limite_comandos": 20,
-        "descricao": "Ideal para quem está começando",
+    "trial": {
+        "nome": "⚡ Trial 7 dias",
+        "cor": 0xE67E22,
+        "limite_comandos": 10,
+        "descricao": "Experimente a plataforma por 7 dias",
     },
-    "pro": {
-        "nome": "🚀 Pro",
-        "cor": 0x9B59B6,
+    "pro_mensal": {
+        "nome": "🚀 Pro Mensal",
+        "cor": 0x3498DB,
         "limite_comandos": 999,
         "descricao": "Acesso completo + suporte prioritário",
     },
-    "elite": {
-        "nome": "👑 Elite",
+    "pro_anual": {
+        "nome": "👑 Pro Anual",
         "cor": 0xF39C12,
         "limite_comandos": 999,
-        "descricao": "Mentoria 1:1 + acesso vitalício",
+        "descricao": "Melhor custo-benefício — economize 58%",
     },
 }
 
 # Mapeamento cargo Discord → plano
 CARGO_PLANO = {
-    "Elite": "elite",
-    "Pro": "pro",
-    "Starter": "starter",
-    "Membro": "gratuito",
+    "👑 Pro Anual": "pro_anual",
+    "🚀 Pro Mensal": "pro_mensal",
+    "⚡ Trial": "trial",
+    "👤 Membro": "gratuito",
+}
+
+# Próximos planos e preços
+PROXIMOS_PLANOS = {
+    "gratuito": ("trial", "R$ 19,90", "7 dias de acesso"),
+    "trial": ("pro_mensal", "R$ 69,90/mês", "acesso completo"),
+    "pro_mensal": ("pro_anual", "R$ 350,00/ano", "economize R$ 488,80"),
+    "pro_anual": None,
+}
+
+BENEFICIOS_PLANOS = {
+    "gratuito": [
+        "✅ Biblioteca de +633 prompts gratuitos",
+        "✅ Conteúdo diário às 9h",
+        "✅ Canal de dúvidas",
+        "✅ Comunidade e networking",
+        "❌ Comandos IA (/copy, /radar, /nicho)",
+        "❌ Canais exclusivos Pro",
+    ],
+    "trial": [
+        "✅ Tudo do Gratuito",
+        "✅ Comandos IA limitados (10/dia)",
+        "✅ Canais Starter desbloqueados",
+        "✅ 7 dias para conhecer a plataforma",
+        "❌ Canais VIP Pro",
+        "❌ Suporte prioritário",
+    ],
+    "pro_mensal": [
+        "✅ Todos os comandos IA ilimitados",
+        "✅ /radar • /copy • /nicho • /prompt",
+        "✅ Canais VIP Pro desbloqueados",
+        "✅ Suporte prioritário",
+        "✅ Aulas e treinamentos",
+        "✅ Sala de estratégia exclusiva",
+    ],
+    "pro_anual": [
+        "✅ Tudo do Pro Mensal",
+        "✅ Badge exclusivo 👑 Pro Anual",
+        "✅ Canal exclusivo anualistas",
+        "✅ Acesso antecipado a novidades",
+        "✅ Economia de R$ 488,80/ano",
+        "✅ Melhor custo-benefício da plataforma",
+    ],
 }
 
 
@@ -361,48 +404,6 @@ async def meu_plano(interaction: discord.Interaction):
     plano_key = get_plano_usuario(interaction.user)
     plano = PLANOS[plano_key]
 
-    beneficios = {
-        "gratuito": [
-            "✅ Acesso ao canal #recursos-gratuitos",
-            "✅ 3 usos dos comandos IA por dia",
-            "✅ Comunidade e networking",
-            "❌ /copy (requer Starter+)",
-            "❌ Análise de nicho completa",
-            "❌ Suporte prioritário",
-        ],
-        "starter": [
-            "✅ Todos os benefícios Gratuito",
-            "✅ 20 usos dos comandos IA por dia",
-            "✅ /copy em todos os formatos",
-            "✅ Análise de nicho completa",
-            "✅ Acesso ao #sala-de-estratégia",
-            "❌ Mentoria em grupo (requer Pro)",
-        ],
-        "pro": [
-            "✅ Todos os benefícios Starter",
-            "✅ Usos ilimitados da IA",
-            "✅ Mentoria em grupo semanal",
-            "✅ Acesso ao #sala-vip-pro",
-            "✅ Suporte prioritário 24h",
-            "❌ Mentoria 1:1 (requer Elite)",
-        ],
-        "elite": [
-            "✅ TUDO desbloqueado",
-            "✅ Mentoria 1:1 mensal",
-            "✅ Acesso vitalício à plataforma",
-            "✅ Grupo exclusivo #sala-elite",
-            "✅ Co-criação de estratégias",
-            "✅ Acesso antecipado a novidades",
-        ],
-    }
-
-    proximos_planos = {
-        "gratuito": ("starter", "R$ 47/mês"),
-        "starter": ("pro", "R$ 97/mês"),
-        "pro": ("elite", "R$ 297/mês"),
-        "elite": None,
-    }
-
     embed = discord.Embed(
         title=f"📋 Seu Plano: {plano['nome']}",
         description=plano["descricao"],
@@ -412,18 +413,18 @@ async def meu_plano(interaction: discord.Interaction):
 
     embed.add_field(
         name="🎁 Seus Benefícios",
-        value="\n".join(beneficios[plano_key]),
+        value="\n".join(BENEFICIOS_PLANOS.get(plano_key, [])),
         inline=False,
     )
 
-    proximo = proximos_planos.get(plano_key)
+    proximo = PROXIMOS_PLANOS.get(plano_key)
     if proximo:
-        proximo_key, preco = proximo
+        proximo_key, preco, descricao = proximo
         proximo_plano = PLANOS[proximo_key]
         embed.add_field(
             name=f"⬆️ Próximo Nível: {proximo_plano['nome']}",
             value=(
-                f"Por apenas **{preco}** você desbloqueia mais recursos!\n"
+                f"Por apenas **{preco}** — {descricao}\n"
                 f"👉 [Fazer upgrade agora](https://afiliahub.com.br/planos)"
             ),
             inline=False,
@@ -431,7 +432,7 @@ async def meu_plano(interaction: discord.Interaction):
     else:
         embed.add_field(
             name="👑 Você está no topo!",
-            value="Aproveite todos os recursos exclusivos do Elite.",
+            value="Aproveite todos os recursos exclusivos do Pro Anual! 🔥",
             inline=False,
         )
 
